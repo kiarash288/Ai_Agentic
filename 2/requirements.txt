@@ -1,0 +1,82 @@
+import os
+from dotenv import load_dotenv
+from typing import TypedDict
+from pydantic import BaseModel, Field
+
+from langgraph.graph import StateGraph, START, END
+from langchain_openai import ChatOpenAI
+
+# 1. تنظیمات اولیه
+load_dotenv()
+if not os.getenv("OPENAI_API_KEY"):
+    print("Error: OPENAI_API_KEY missing.")
+    exit(1)
+
+# 2. تعریف ساختار جوک (Data Model) با Pydantic
+# این کلاس به LLM می‌فهماند که خروجی باید چه شکلی باشد.
+class Joke(BaseModel):
+    setup: str = Field(description="مقدمه یا بخش اول جوک که شنونده را آماده می‌کند")
+    punchline: str = Field(description="بخش نهایی و خنده‌دار جوک")
+    rating: int = Field(description="میزان بامزگی جوک از ۱ تا ۱۰ به نظر خودت", ge=1, le=10)
+
+# 3. تعریف استیت (State)
+# در این پروژه، ما لیست پیام نداریم. فقط ورودی (موضوع) و خروجی (جوک) داریم.
+class State(TypedDict):
+    topic: str      # ورودی کاربر
+    generated_joke: Joke  # خروجی مدل (از جنس کلاس Joke بالا)
+
+# 4. آماده‌سازی مدل
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7)
+
+# --- جادوی اصلی اینجاست ---
+# به مدل می‌گوییم: "خروجی تو حتماً باید در قالب کلاس Joke باشد"
+structured_llm = llm.with_structured_output(Joke)
+
+# 5. تعریف نود (Node)
+def generate_joke_node(state: State):
+    topic = state["topic"]
+    
+    # درخواست از مدل
+    # دقت کنید که ما اینجا پرامپت را مستقیم می‌سازیم
+    prompt = f"یک جوک خیلی خنده‌دار درباره '{topic}' بگو."
+    
+    # چون از structured_llm استفاده کردیم، خروجی مستقیماً یک آبجکت Joke است (نه متن خالی)
+    response_object = structured_llm.invoke(prompt)
+    
+    # آپدیت کردن استیت
+    # اینجا چون لیست نداریم، مقدار قبلی جایگزین می‌شود (Overwrite)
+    return {"generated_joke": response_object}
+
+# 6. ساخت گراف
+builder = StateGraph(State)
+
+builder.add_node("joke_generator", generate_joke_node)
+
+builder.add_edge(START, "joke_generator")
+builder.add_edge("joke_generator", END)
+
+graph = builder.compile()
+
+# 7. اجرای برنامه
+def main():
+    print("--- Structured Joke Generator ---")
+    while True:
+        user_topic = input("\nموضوع جوک رو بگو (یا quit): ")
+        if user_topic.lower() in ["quit", "exit"]:
+            break
+            
+        # اجرا
+        result = graph.invoke({"topic": user_topic})
+        
+        # دسترسی به خروجی
+        joke = result["generated_joke"]
+        
+        print(f"\n🎭 Setup: {joke.setup}")
+        print(f"😂 Punchline: {joke.punchline}")
+        print(f"⭐ Rating: {joke.rating}/10")
+
+        # برای اینکه ببینی پشت صحنه چه خبره، فرمت خام رو هم پرینت می‌کنیم
+        print(f"\n[Raw Data]: {joke}")
+
+if __name__ == "__main__":
+    main()
