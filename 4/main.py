@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 from typing import Annotated
 from typing_extensions import TypedDict
 
-from langchain_openai import ChatOpenAI
+from langchain_groq import ChatGroq
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_core.messages import HumanMessage
 
@@ -28,7 +28,9 @@ search_tool = TavilySearchResults(max_results=2)
 tools = [search_tool]
 
 
-llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
+llm = ChatGroq(
+    model="llama-3.3-70b-versatile", api_key=os.getenv("GROQ_API_KEY"), temperature=0.7
+)
 llm_with_tools = llm.bind_tools(tools)
 
 
